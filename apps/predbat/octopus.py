@@ -87,6 +87,15 @@ api_token_query = """mutation {{
 
 account_query = """query {{
   account(accountNumber: "{account_id}") {{
+    campaigns {{
+      ... on AccountCampaignType {{
+          campaignExpiryDate
+          expiryDate
+          name
+          slug
+          startDate
+      }}
+    }}
     electricityAgreements(active: true) {{
 			meterPoint {{
 				mpan
@@ -242,6 +251,25 @@ intelligent_settings_query = """query {{
 	}}
 }}"""
 
+octopus_flex_event_query = """query {{
+    customerFlexibilityCampaignEvents(
+        accountNumber: "{account_id}",
+        supplyPointIdentifier: "{mpan}",
+        campaignSlug: "{slug}",
+        last: 100
+    ) {{
+        edges {{
+            node {{
+                name
+                code
+                startAt
+                endAt
+                isEventParticipant
+            }}
+        }}
+      }}
+}}"""
+
 octoplus_saving_session_query = """query {{
 	savingSessions {{
     events(getDevEvents: false) {{
@@ -251,6 +279,9 @@ octoplus_saving_session_query = """query {{
 			startAt
 			endAt
       devEvent
+      targetGsp {{
+        groupId
+      }}
 		}}
 		account(accountNumber: "{account_id}") {{
 			hasJoinedCampaign
@@ -619,6 +650,7 @@ class OctopusAPI(ComponentBase):
         electric = self.account_data.get("account", {}).get("electricityAgreements", [])
         for agreement in electric + gas:
             meterpoint = agreement.get("meterPoint", {})
+            mpan = meterpoint.get("mpan", None)
             meters = meterpoint.get("meters", [])
             agreements = meterpoint.get("agreements", [])
             isActiveMeter = False
@@ -665,18 +697,18 @@ class OctopusAPI(ComponentBase):
                         deviceID_export = None
                         self.log("OctopusAPI: No export meter found but tariff code indicates export, treating as export tariff with device ID None")
                 if isImport:
-                    self.log("OctopusAPI: Adding import tariff with code {} product {} device ID {}".format(tariffCode, productCode, deviceID_import))
-                    tariffs["import"] = {"tariffCode": tariffCode, "productCode": productCode, "deviceID": deviceID_import}
+                    self.log("OctopusAPI: Adding import tariff with code {} product {} device ID {} MPAN {}".format(tariffCode, productCode, deviceID_import, mpan))
+                    tariffs["import"] = {"tariffCode": tariffCode, "productCode": productCode, "deviceID": deviceID_import, "mpan": mpan}
                     tariffs["import"]["data"] = self.tariffs.get("import", {}).get("data", None)
                     tariffs["import"]["standing"] = self.tariffs.get("import", {}).get("standing", None)
                 if isExport:
-                    self.log("OctopusAPI: Adding export tariff with code {} product {} device ID {}".format(tariffCode, productCode, deviceID_export))
-                    tariffs["export"] = {"tariffCode": tariffCode, "productCode": productCode, "deviceID": deviceID_export}
+                    self.log("OctopusAPI: Adding export tariff with code {} product {} device ID {} MPAN {}".format(tariffCode, productCode, deviceID_export, mpan))
+                    tariffs["export"] = {"tariffCode": tariffCode, "productCode": productCode, "deviceID": deviceID_export, "mpan": mpan}
                     tariffs["export"]["data"] = self.tariffs.get("export", {}).get("data", None)
                     tariffs["export"]["standing"] = self.tariffs.get("export", {}).get("standing", None)
                 if isGas:
-                    self.log("OctopusAPI: Adding gas tariff with code {} product {} device ID {}".format(tariffCode, productCode, deviceID_gas))
-                    tariffs["gas"] = {"tariffCode": tariffCode, "productCode": productCode, "deviceID": deviceID_gas}
+                    self.log("OctopusAPI: Adding gas tariff with code {} product {} device ID {} MPAN {}".format(tariffCode, productCode, deviceID_gas, mpan))
+                    tariffs["gas"] = {"tariffCode": tariffCode, "productCode": productCode, "deviceID": deviceID_gas, "mpan": mpan}
                     tariffs["gas"]["data"] = self.tariffs.get("gas", {}).get("data", None)
                     tariffs["gas"]["standing"] = self.tariffs.get("gas", {}).get("standing", None)
         self.tariffs = tariffs
@@ -1006,7 +1038,23 @@ class OctopusAPI(ComponentBase):
         """
         Get the saving sessions
         """
-        response_data = await self.async_graphql_query(octoplus_saving_session_query.format(account_id=self.account_id), "get-saving-sessions", ignore_errors=True)
+        # Find import meter for mpan
+        mpan = None
+        import_tariff = self.tariffs.get("import", {})
+        if import_tariff and "mpan" in import_tariff:
+            mpan = import_tariff["mpan"]
+        if mpan is None:
+            self.log("Warn: OctopusAPI: Cannot fetch saving sessions - no MPAN found for import meter")
+            return self.saving_sessions
+
+        self.log("OctopusAPI: Fetching saving sessions with account ID {} MPAN {}".format(account_id, mpan))
+        response_data = await self.async_graphql_query(octopus_flex_event_query.format(account_id=self.account_id, mpan=mpan, slug="free_electricity"), "get-free-electricity", ignore_errors=True)
+        self.log("OctopusAPI: Free electricity response data {}".format(response_data))
+
+        response_data = await self.async_graphql_query(octopus_flex_event_query.format(account_id=self.account_id, mpan=mpan, slug="octoplus-saving-sessions"), "get-saving-sessions", ignore_errors=True)
+        self.log("OctopusAPI: Saving sessions response data {}".format(response_data))
+        sys.exit(1)
+
         if response_data is None:
             return self.saving_sessions
         else:
@@ -1688,6 +1736,7 @@ class OctopusAPI(ComponentBase):
         """
 
         response_data = await self.async_graphql_query(account_query.format(account_id=account_id), "get-account")
+        self.log("OctopusAPI: Fetching account data: {}".format(response_data))
         if response_data is None:
             self.log("Error: OctopusAPI: Failed to retrieve account")
             return self.account_data
