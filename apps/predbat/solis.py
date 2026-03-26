@@ -356,29 +356,28 @@ class SolisAPI(ComponentBase):
         headers = self._build_headers(endpoint, payload)
 
         try:
-            async with asyncio.timeout(SOLIS_REQUEST_TIMEOUT):
-                async with self.session.post(url, headers=headers, json=payload) as response:
-                    # Check HTTP status
-                    if response.status != 200:
-                        error_text = await response.text()
-                        reason = "auth_error" if response.status in (401, 403) else "server_error"
-                        record_api_call("solis", False, reason)
-                        raise SolisAPIError(f"HTTP error: {error_text}", status_code=response.status)
+            async with self.session.post(url, headers=headers, json=payload) as response:
+                # Check HTTP status
+                if response.status != 200:
+                    error_text = await response.text()
+                    reason = "auth_error" if response.status in (401, 403) else "server_error"
+                    record_api_call("solis", False, reason)
+                    raise SolisAPIError(f"HTTP error: {error_text}", status_code=response.status)
 
-                    # Parse JSON response
-                    response_json = await response.json()
+                # Parse JSON response
+                response_json = await response.json()
 
-                    # Check API response code
-                    code = response_json.get("code", "Unknown")
-                    if str(code) != "0":
-                        error_msg = response_json.get("msg", "Unknown error")
-                        error_detail = SOLIS_API_CODES.get(str(code), f"Unknown code: {code}")
-                        record_api_call("solis", False, "server_error")
-                        raise SolisAPIError(f"API error: {error_msg} ({error_detail} - {response_json})", response_code=str(code))
+                # Check API response code
+                code = response_json.get("code", "Unknown")
+                if str(code) != "0":
+                    error_msg = response_json.get("msg", "Unknown error")
+                    error_detail = SOLIS_API_CODES.get(str(code), f"Unknown code: {code}")
+                    record_api_call("solis", False, "server_error")
+                    raise SolisAPIError(f"API error: {error_msg} ({error_detail} - {response_json})", response_code=str(code))
 
-                    # Return data field
-                    record_api_call("solis")
-                    return response_json.get("data")
+                # Return data field
+                record_api_call("solis")
+                return response_json.get("data")
 
         except asyncio.TimeoutError as err:
             record_api_call("solis", False, "connection_error")
@@ -2928,8 +2927,18 @@ async def test_solis_api(key_id, secret):  # pragma: no cover
     # Call run() once
     print("Calling run() once...")
     await solis_api.run(seconds=0, first=True)
-    #for device_sn, values in solis_api.cached_values.items():
-    #    await solis_api.read_and_write_cid(device_sn, SOLIS_CID_BATTERY_RESERVE_SOC, "12", field_description="Test write reserve SOC to 12%")
+    if 0:
+        for device_sn, values in solis_api.cached_values.items():
+            await solis_api.read_and_write_cid(device_sn, SOLIS_CID_BATTERY_RESERVE_SOC, "12", field_description="Test write reserve SOC to 12%")
+        for device_sn, values in solis_api.cached_values.items():
+            solis_api.log(f"Solis API: Charge current is 0A for {device_sn}, setting storage mode to 'Feed-in priority'")
+            await solis_api.set_storage_mode_if_needed(device_sn, "Feed-in priority")
+            solis_api.log(f"Solis API: Outside of charge/discharge slots for {device_sn}, setting storage mode to 'Feed-in priority - No Timed Charge/Discharge'")
+            await solis_api.set_storage_mode_if_needed(device_sn, "Feed-in priority - No Timed Charge/Discharge")
+            solis_api.log(f"Solis API: Setting storage mode to 'Self-Use'")
+            await solis_api.set_storage_mode_if_needed(device_sn, "Self-Use")
+            solis_api.log(f"Solis API: Outside of charge/discharge slots for {device_sn}, setting storage mode to 'Self-Use - No Timed Charge/Discharge'")
+            await solis_api.set_storage_mode_if_needed(device_sn, "Self-Use - No Timed Charge/Discharge")
     print("Run completed successfully")
 
     await solis_api.final()
