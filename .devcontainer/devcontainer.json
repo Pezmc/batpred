@@ -3,7 +3,7 @@
 {
 	"name": "Python 3",
 	// Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
-	"image": "mcr.microsoft.com/devcontainers/python:0-3.11",
+	"image": "mcr.microsoft.com/devcontainers/python:3.11",
 	// Features to add to the dev container. More info: https://containers.dev/features.
 	// "features": {},
 	// Configure tool-specific properties.
@@ -23,7 +23,6 @@
 				"ms-python.python",
 				"ms-python.black-formatter",
 				"ms-python.isort",
-				"ms-python.flake8",
 				"sourcery.sourcery",
 				"njpwerner.autodocstring",
 				"streetsidesoftware.code-spell-checker",
@@ -46,7 +45,7 @@
 	// },
 	// Passthrough of SSH key to devcontainer
 	"mounts": [
-		"type=bind,source=/home/${localEnv:USER}/.ssh,target=/home/vscode/.ssh_host,readonly"
+		"type=bind,source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh_host,readonly"
 	],
 	// Use 'postCreateCommand' to run commands after the container is created.
 	// SSH config is patched to strip macOS-only 'UseKeychain' option (not supported on Linux)
