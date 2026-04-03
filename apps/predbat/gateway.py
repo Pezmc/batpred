@@ -851,6 +851,7 @@ class GatewayMQTT(ComponentBase):
                 except ValueError:
                     pass
             saving_month_average = round(float(saving_total) * 365 / 12 / total_days_of_savings, 2)
+            predbat_status = self.get_state_wrapper(self.prefix + ".status") or "unknown"
 
             payload = {
                 "current_price": round(float(current_price), 1),
@@ -863,6 +864,7 @@ class GatewayMQTT(ComponentBase):
                 "savings_total": saving_total,
                 "savings_total_days": total_days_of_savings,
                 "savings_month_average": saving_month_average,
+                "status": predbat_status,
             }
 
             # Only publish if data changed
@@ -870,7 +872,7 @@ class GatewayMQTT(ComponentBase):
                 return
 
             self._last_predbat_data = dict(payload)  # store copy without timestamp so dedup works next cycle
-            payload["timestamp"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            payload["timestamp"] = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
             payload_json = json.dumps(payload)
             topic = f"{self._topic_base}/predbat_data"
 

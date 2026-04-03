@@ -1248,6 +1248,7 @@ class TestPublishPredbatData:
             "predbat.savings_total_predbat": "0",
             "predbat.savings_yesterday_predbat": "0",
             "predbat.savings_total_predbat#start_date": None,
+            "predbat.status": "idle",
         }
         state_store = {**defaults, **(states or {})}
 
@@ -1331,6 +1332,57 @@ class TestPublishPredbatData:
         self._run(gw._publish_predbat_data())
         payload = self._get_published_payload(gw)
         assert payload["timeline"] == [0] * 12
+
+    def test_timestamp_is_integer_seconds_since_epoch(self):
+        """Payload timestamp must be an integer number of seconds since the Unix epoch."""
+        import time
+
+        before = int(time.time())
+        gw = self._make_gateway({"predbat.rates": "10.0", "predbat.cost_today": "0", "predbat.ppkwh_today": "10.0"})
+        self._run(gw._publish_predbat_data())
+        after = int(time.time())
+        payload = self._get_published_payload(gw)
+        assert "timestamp" in payload, "Payload must contain 'timestamp' key"
+        assert isinstance(payload["timestamp"], int), f"timestamp must be int, got {type(payload['timestamp'])}"
+        assert before <= payload["timestamp"] <= after + 1, f"timestamp {payload['timestamp']} not within [{before}, {after}]"
+
+    def test_status_field_reflects_predbat_status_entity(self):
+        """status field must carry the value of the predbat.status entity."""
+        gw = self._make_gateway({"predbat.status": "charging"})
+        self._run(gw._publish_predbat_data())
+        payload = self._get_published_payload(gw)
+        assert payload["status"] == "charging", f"Expected 'charging', got {payload['status']}"
+
+    def test_status_field_defaults_to_unknown_when_missing(self):
+        """When predbat.status entity is absent the status field must be 'unknown'."""
+        gw = self._make_gateway({"predbat.status": None})
+        self._run(gw._publish_predbat_data())
+        payload = self._get_published_payload(gw)
+        assert payload["status"] == "unknown", f"Expected 'unknown', got {payload['status']}"
+
+    def test_all_expected_payload_keys_present(self):
+        """Every key defined in the payload dict must be present in the published JSON."""
+        expected_keys = {
+            "current_price",
+            "avg_price",
+            "total_cost",
+            "timeline",
+            "block_soc",
+            "block_state",
+            "savings_yesterday",
+            "savings_total",
+            "savings_total_days",
+            "savings_month_average",
+            "status",
+            "timestamp",
+        }
+        gw = self._make_gateway()
+        self._run(gw._publish_predbat_data())
+        payload = self._get_published_payload(gw)
+        missing = expected_keys - set(payload.keys())
+        assert not missing, f"Payload is missing keys: {missing}"
+        extra = set(payload.keys()) - expected_keys
+        assert not extra, f"Payload has unexpected extra keys: {extra}"
 
     # ------------------------------------------------------------------
     # Deduplication
